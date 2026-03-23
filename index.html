@@ -17,6 +17,22 @@
     --border: #2a2a22;
     --queue-bg: #0f0f0c;
   }
+  .reset-btn {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 6px 12px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .reset-btn:hover {
+    color: var(--accent2);
+    border-color: var(--accent2);
+  }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -518,9 +534,12 @@
   <!-- QUEUE -->
   <div class="queue-side">
     <div class="queue-header">
-      <div class="queue-title">
-        <span class="live-dot"></span>
-        Order Queue
+      <div class="queue-title" style="justify-content: space-between;">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <span class="live-dot"></span>
+          Order Queue
+        </div>
+        <button class="reset-btn" onclick="resetQueue()">Clear All</button>
       </div>
       <div class="queue-stats">
         <div class="stat">
@@ -571,7 +590,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
-import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
+import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, updateDoc, serverTimestamp, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAhjg4rGeaSg7byAwbJOnA8_5nAEPAd39U",
@@ -768,11 +787,24 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 2500);
 }
 
+async function resetQueue() {
+  if (!confirm("Are you sure you want to clear the entire queue? This cannot be undone.")) return;
+  try {
+    const promises = orders.map(o => o._docId ? deleteDoc(doc(db, 'orders', o._docId)) : Promise.resolve());
+    await Promise.all(promises);
+    showToast("Queue cleared for a new day!");
+  } catch(e) {
+    console.error(e);
+    showToast("Error clearing queue");
+  }
+}
+
 window.filterCat = filterCat;
 window.promptOrder = promptOrder;
 window.closeConfirm = closeConfirm;
 window.confirmOrder = confirmOrder;
 window.setupTempButtons = setupTempButtons;
+window.resetQueue = resetQueue;
 
 // Init Firebase listener
 const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
