@@ -453,10 +453,17 @@
     bottom: 0; left: 0;
     height: 2px;
     background: var(--accent2);
-    transition: width 1s linear;
   }
 
-  .status-ready .progress-bar { background: #4ade80; width: 100% !important; }
+  .status-preparing .progress-bar {
+    animation: autoProgress 8s ease-out forwards;
+  }
+  @keyframes autoProgress {
+    from { width: 0%; }
+    to { width: 95%; }
+  }
+
+  .status-ready .progress-bar { background: #4ade80; width: 100% !important; animation: none; }
 
   /* Toast */
   .toast {
@@ -562,7 +569,22 @@
 
 <div class="toast" id="toast"></div>
 
-<script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
+import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAhjg4rGeaSg7byAwbJOnA8_5nAEPAd39U",
+  authDomain: "openorder-a1eac.firebaseapp.com",
+  projectId: "openorder-a1eac",
+  storageBucket: "openorder-a1eac.firebasestorage.app",
+  messagingSenderId: "881392262545",
+  appId: "1:881392262545:web:9f9700291f454d4d7f8e30"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
 const DRINKS = [
   { id:1, name:'Spanish Latte', icon:'☕', desc:'Espresso, condensed milk, milk', cat:'coffee' },
   { id:2, name:'Mocha Latte', icon:'☕', desc:'Espresso, chocolate, milk', cat:'coffee' },
@@ -626,7 +648,7 @@ function closeConfirm() {
   document.getElementById('tempOptions').style.display = 'none';
 }
 
-function confirmOrder() {
+async function confirmOrder() {
   if (!selectedDrink) return;
   const name = document.getElementById('customerName').value.trim();
   if (!name) {
@@ -638,35 +660,34 @@ function confirmOrder() {
   const tempLabel = (drink.id >= 1 && drink.id <= 3) ? (selectedTemp === 'hot' ? 'Hot' : 'Cold') : '';
   const itemName = tempLabel ? `${tempLabel} ${drink.name}` : drink.name;
 
-  orderCounter++;
-  const order = {
-    id: orderCounter,
-    name,
-    items: [{ name: itemName, icon: drink.icon, qty: 1 }],
-    status: 'pending',
-    time: new Date(),
-    progress: 0,
-  };
+  const newId = orderCounter + 1;
 
-  orders.unshift(order);
-  totalOrdersToday++;
   closeConfirm();
   document.getElementById('customerName').value = '';
-  renderQueue();
-  showToast(`Order #${orderCounter} placed!`);
+  showToast(`Order #${newId} placed!`);
 
-  // Simulate status changes
-  setTimeout(() => {
-    order.status = 'preparing';
-    renderQueue();
-    animateProgress(order);
-  }, 1200);
+  try {
+    const docRef = await addDoc(collection(db, 'orders'), {
+      id: newId,
+      name,
+      items: [{ name: itemName, icon: drink.icon, qty: 1 }],
+      status: 'pending',
+      createdAt: serverTimestamp()
+    });
 
-  setTimeout(() => {
-    order.status = 'ready';
-    renderQueue();
-    showToast(`Order #${order.id} is READY!`);
-  }, 8000 + Math.random() * 4000);
+    // Simulate status changes via Firestore updates
+    setTimeout(() => {
+      updateDoc(docRef, { status: 'preparing' });
+    }, 1200);
+
+    setTimeout(() => {
+      updateDoc(docRef, { status: 'ready' });
+      showToast(`Order #${newId} is READY!`);
+    }, 8000 + Math.random() * 4000);
+  } catch(e) {
+    console.error(e);
+    showToast('Failed to place order');
+  }
 }
 
 // Close confirm modal when clicking outside
@@ -674,17 +695,6 @@ document.addEventListener('click', function(e) {
   const overlay = document.getElementById('confirmOverlay');
   if (e.target === overlay) closeConfirm();
 });
-
-function animateProgress(order) {
-  let p = 0;
-  const interval = setInterval(() => {
-    p += 2;
-    order.progress = p;
-    const bar = document.querySelector(`[data-id="${order.id}"] .progress-bar`);
-    if (bar) bar.style.width = p + '%';
-    if (p >= 100 || order.status === 'ready') clearInterval(interval);
-  }, 120);
-}
 
 function renderQueue() {
   const list = document.getElementById('queueList');
@@ -699,8 +709,8 @@ function renderQueue() {
     const itemLines = o.items.map(i =>
       `<div class="item-line"><span>${i.icon} ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}</span></div>`
     ).join('');
-    const statusLabel = o.status === 'pending' ? 'Queued' : o.status === 'preparing' ? 'Preparing' : 'Ready ✓';
-    const progressWidth = o.status === 'ready' ? 100 : o.progress || 0;
+    const statusLabel = o.status === 'pending' ? 'Queued' : o.status === 'preparing' ? 'Preparing...' : 'Ready ✓';
+    const progressStyle = o.status === 'ready' ? 'style="width: 100%;"' : '';
 
     return `
       <div class="order-entry status-${o.status}" data-id="${o.id}">
@@ -712,7 +722,7 @@ function renderQueue() {
         <div class="order-footer">
           <span class="order-time">${timeStr}</span>
         </div>
-        <div class="progress-bar" style="width:${progressWidth}%"></div>
+        <div class="progress-bar" ${progressStyle}></div>
       </div>`;
   }).join('');
 
@@ -757,6 +767,33 @@ function showToast(msg) {
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 2500);
 }
+
+window.filterCat = filterCat;
+window.promptOrder = promptOrder;
+window.closeConfirm = closeConfirm;
+window.confirmOrder = confirmOrder;
+window.setupTempButtons = setupTempButtons;
+
+// Init Firebase listener
+const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+onSnapshot(q, (snapshot) => {
+  orders = snapshot.docs.map(docSnap => {
+    const data = docSnap.data();
+    return {
+      _docId: docSnap.id,
+      id: data.id || 0,
+      name: data.name,
+      items: data.items || [],
+      status: data.status,
+      time: data.createdAt ? data.createdAt.toDate() : new Date()
+    };
+  });
+  totalOrdersToday = orders.length;
+  if (orders.length > 0) {
+    orderCounter = Math.max(...orders.map(o => o.id));
+  }
+  renderQueue();
+});
 
 // Init
 renderDrinks();
