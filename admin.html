@@ -558,25 +558,13 @@
     const STATUS_CYCLE = { pending: 'preparing', preparing: 'ready' };
     const STATUS_LABELS = { pending: 'Queued', preparing: 'Preparing...', ready: 'Ready ✓' };
 
-    // Normalise phone for wa.me (strip spaces, dashes, parentheses; keep leading +)
-    function normalisePhone(raw) {
-      return (raw || '').replace(/[\s\-().]/g, '');
-    }
-
     // Advance order to next status
-    async function advanceStatus(docId, currentStatus, phone) {
+    async function advanceStatus(docId, currentStatus) {
       const next = STATUS_CYCLE[currentStatus];
       if (!next) return;
       try {
         await updateDoc(doc(db, 'orders', docId), { status: next });
-        if (next === 'ready' && phone) {
-          const p = normalisePhone(phone);
-          const msg = encodeURIComponent('Hi! 👋 Your drink at KAFEIN8 is ready for pickup. Come grab it while it\'s fresh! ☕');
-          window.open(`https://wa.me/${p}?text=${msg}`, '_blank');
-          showToast('✅ Ready! WhatsApp opened to notify customer.', 'green-toast');
-        } else {
-          showToast(next === 'preparing' ? '🔥 Now Preparing!' : '✅ Order Ready!', next === 'ready' ? 'green-toast' : '');
-        }
+        showToast(next === 'preparing' ? '🔥 Now Preparing!' : '✅ Order Ready!', next === 'ready' ? 'green-toast' : '');
       } catch (e) {
         showToast('Failed to update status', 'red-toast');
       }
@@ -626,17 +614,12 @@
           `<div class="card-item-row"><span>${i.icon || '☕'}</span><span>${i.name}${i.qty > 1 ? ' ×' + i.qty : ''}</span></div>`
         ).join('');
 
-        // WhatsApp quick-ping link for already-ready orders
-        const waPhone = normalisePhone(o.phone || o.name || '');
-        const waMsg = encodeURIComponent('Hi! 👋 Your drink at KAFEIN8 is ready for pickup. Come grab it while it\'s fresh! ☕');
-        const waLink = waPhone ? `<a href="https://wa.me/${waPhone}?text=${waMsg}" target="_blank" style="font-size:0.7rem;color:#25D366;text-decoration:none;letter-spacing:0.05em;">📲 WhatsApp</a>` : '';
-        const phoneDisplay = o.phone || o.name || '—';
-
+        const nextStatus = STATUS_CYCLE[o.status];
         let primaryBtn = '';
         if (o.status === 'pending') {
-          primaryBtn = `<button class="action-btn btn-next" onclick="advanceStatus('${o._docId}', '${o.status}', '${(o.phone || o.name || '').replace(/'/g, '')}')" >▶ Prepare</button>`;
+          primaryBtn = `<button class="action-btn btn-next" onclick="advanceStatus('${o._docId}', '${o.status}')">▶ Prepare</button>`;
         } else if (o.status === 'preparing') {
-          primaryBtn = `<button class="action-btn btn-done" onclick="advanceStatus('${o._docId}', '${o.status}', '${(o.phone || o.name || '').replace(/'/g, '')}')" >✓ Mark Ready</button>`;
+          primaryBtn = `<button class="action-btn btn-done" onclick="advanceStatus('${o._docId}', '${o.status}')">✓ Mark Ready</button>`;
         } else {
           primaryBtn = `<button class="action-btn" style="opacity:0.4;cursor:default">✓ Completed</button>`;
         }
@@ -645,9 +628,8 @@
           <div class="order-card s-${o.status}">
             <div class="card-top">
               <div>
-                <div class="card-num">#${o.id}</div>
-                <div class="card-name">📱 ${phoneDisplay} &nbsp;${waLink}</div>
-                <div class="card-name" style="margin-top:2px;opacity:0.6;font-size:0.68rem;">${timeStr}</div>
+                <div class="card-num">#${o.id} · ${o.name}</div>
+                <div class="card-name">${timeStr}</div>
               </div>
               <span class="status-pill">${STATUS_LABELS[o.status] || o.status}</span>
             </div>
@@ -715,7 +697,6 @@
           _docId: docSnap.id,
           id: data.id || 0,
           name: data.name,
-          phone: data.phone || data.name || '',
           items: data.items || [],
           status: data.status || 'pending',
           time: data.createdAt ? data.createdAt.toDate() : new Date()
